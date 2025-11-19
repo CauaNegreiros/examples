@@ -1,13 +1,843 @@
-<!doctype html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Vite + React + TS</title>
-  </head>
-  <body>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sistema Financeiro Elite</title>
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
     <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
-  </body>
+    
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const { createRoot } = ReactDOM;
+
+        // Ícones do Lucide
+        const Icon = ({ name, size = 24, ...props }) => {
+            useEffect(() => {
+                lucide.createIcons();
+            });
+            return React.createElement('i', { 
+                'data-lucide': name, 
+                ...props,
+                style: { width: size, height: size }
+            });
+        };
+
+        const FinanceManager = () => {
+            const [activeTab, setActiveTab] = useState('dashboard');
+            
+            const loadFromStorage = (key, defaultValue) => {
+                try {
+                    const saved = localStorage.getItem(key);
+                    return saved ? JSON.parse(saved) : defaultValue;
+                } catch {
+                    return defaultValue;
+                }
+            };
+
+            const [entradas, setEntradas] = useState(() => loadFromStorage('entradas', []));
+            const [saidas, setSaidas] = useState(() => loadFromStorage('saidas', []));
+            const [metas, setMetas] = useState(() => loadFromStorage('metas', []));
+            const [dividas, setDividas] = useState(() => loadFromStorage('dividas', []));
+            const [investimentos, setInvestimentos] = useState(() => loadFromStorage('investimentos', []));
+            const [assinaturas, setAssinaturas] = useState(() => loadFromStorage('assinaturas', []));
+            const [cartoes, setCartoes] = useState(() => loadFromStorage('cartoes', []));
+            const [orcamento, setOrcamento] = useState(() => loadFromStorage('orcamento', {}));
+            const [reservaEmergencia, setReservaEmergencia] = useState(() => loadFromStorage('reservaEmergencia', { valorAtual: 0, valorMeta: 0 }));
+            
+            const [entradaForm, setEntradaForm] = useState({ data: '', fonte: '', valor: '' });
+            const [saidaForm, setSaidaForm] = useState({ data: '', categoria: '', valor: '', descricao: '', parcelado: false, parcelas: 1 });
+            const [metaForm, setMetaForm] = useState({ nome: '', valorAlvo: '', prazo: '', valorAtual: '0' });
+            const [dividaForm, setDividaForm] = useState({ nome: '', valorTotal: '', valorPago: '0', dataVencimento: '' });
+            const [investimentoForm, setInvestimentoForm] = useState({ nome: '', tipo: '', valorInvestido: '', valorAtual: '', dataInicio: '' });
+            const [assinaturaForm, setAssinaturaForm] = useState({ nome: '', valor: '', diaCobranca: '', ativa: true });
+            const [cartaoForm, setCartaoForm] = useState({ nome: '', limite: '', fechamento: '' });
+            const [orcamentoForm, setOrcamentoForm] = useState({ categoria: '', limite: '' });
+            const [alertas, setAlertas] = useState([]);
+
+            useEffect(() => { localStorage.setItem('entradas', JSON.stringify(entradas)); }, [entradas]);
+            useEffect(() => { localStorage.setItem('saidas', JSON.stringify(saidas)); }, [saidas]);
+            useEffect(() => { localStorage.setItem('metas', JSON.stringify(metas)); }, [metas]);
+            useEffect(() => { localStorage.setItem('dividas', JSON.stringify(dividas)); }, [dividas]);
+            useEffect(() => { localStorage.setItem('investimentos', JSON.stringify(investimentos)); }, [investimentos]);
+            useEffect(() => { localStorage.setItem('assinaturas', JSON.stringify(assinaturas)); }, [assinaturas]);
+            useEffect(() => { localStorage.setItem('cartoes', JSON.stringify(cartoes)); }, [cartoes]);
+            useEffect(() => { localStorage.setItem('orcamento', JSON.stringify(orcamento)); }, [orcamento]);
+            useEffect(() => { localStorage.setItem('reservaEmergencia', JSON.stringify(reservaEmergencia)); }, [reservaEmergencia]);
+
+            const totalEntradas = entradas.reduce((sum, e) => sum + parseFloat(e.valor || 0), 0);
+            const totalSaidas = saidas.reduce((sum, s) => sum + parseFloat(s.valor || 0), 0);
+            const saldoAtual = totalEntradas - totalSaidas;
+            const totalDividas = dividas.reduce((sum, d) => sum + (parseFloat(d.valorTotal) - parseFloat(d.valorPago)), 0);
+            const totalInvestimentos = investimentos.reduce((sum, i) => sum + parseFloat(i.valorAtual || 0), 0);
+            const totalAssinaturas = assinaturas.filter(a => a.ativa).reduce((sum, a) => sum + parseFloat(a.valor || 0), 0);
+            const patrimonioLiquido = saldoAtual + totalInvestimentos - totalDividas;
+
+            const mesAtual = new Date().toISOString().slice(0, 7);
+            const entradasMes = entradas.filter(e => e.data.startsWith(mesAtual)).reduce((sum, e) => sum + parseFloat(e.valor || 0), 0);
+            const saidasMes = saidas.filter(s => s.data.startsWith(mesAtual)).reduce((sum, s) => sum + parseFloat(s.valor || 0), 0);
+
+            const gastosPorCategoria = saidas.reduce((acc, s) => {
+                acc[s.categoria] = (acc[s.categoria] || 0) + parseFloat(s.valor);
+                return acc;
+            }, {});
+
+            const calcularScore = () => {
+                let score = 50;
+                if (saldoAtual > 0) score += 10;
+                if (reservaEmergencia.valorAtual >= reservaEmergencia.valorMeta) score += 15;
+                else if (reservaEmergencia.valorAtual >= reservaEmergencia.valorMeta * 0.5) score += 7;
+                if (totalDividas === 0) score += 15;
+                else if (totalDividas < entradasMes * 0.3) score += 7;
+                else score -= 10;
+                if (totalInvestimentos > entradasMes) score += 10;
+                else if (totalInvestimentos > 0) score += 5;
+                return Math.min(Math.max(score, 0), 100);
+            };
+
+            const scoreFinanceiro = calcularScore();
+
+            const limparTodosDados = () => {
+                if (window.confirm('⚠️ ATENÇÃO! Isso vai apagar TODOS os seus dados permanentemente. Tem certeza?')) {
+                    localStorage.clear();
+                    setEntradas([]);
+                    setSaidas([]);
+                    setMetas([]);
+                    setDividas([]);
+                    setInvestimentos([]);
+                    setAssinaturas([]);
+                    setCartoes([]);
+                    setOrcamento({});
+                    setReservaEmergencia({ valorAtual: 0, valorMeta: 0 });
+                    alert('✅ Todos os dados foram apagados!');
+                }
+            };
+
+            const exportarDados = () => {
+                const dados = { entradas, saidas, metas, dividas, investimentos, assinaturas, cartoes, orcamento, reservaEmergencia, dataExportacao: new Date().toISOString() };
+                const blob = new Blob([JSON.stringify(dados, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `financas-backup-${new Date().toISOString().slice(0, 10)}.json`;
+                a.click();
+                URL.revokeObjectURL(url);
+                alert('✅ Backup exportado com sucesso!');
+            };
+
+            const importarDados = (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const dados = JSON.parse(e.target.result);
+                            setEntradas(dados.entradas || []);
+                            setSaidas(dados.saidas || []);
+                            setMetas(dados.metas || []);
+                            setDividas(dados.dividas || []);
+                            setInvestimentos(dados.investimentos || []);
+                            setAssinaturas(dados.assinaturas || []);
+                            setCartoes(dados.cartoes || []);
+                            setOrcamento(dados.orcamento || {});
+                            setReservaEmergencia(dados.reservaEmergencia || { valorAtual: 0, valorMeta: 0 });
+                            alert('✅ Dados importados com sucesso!');
+                        } catch {
+                            alert('❌ Erro ao importar arquivo.');
+                        }
+                    };
+                    reader.readAsText(file);
+                }
+            };
+
+            const addEntrada = () => {
+                if (entradaForm.data && entradaForm.fonte && entradaForm.valor) {
+                    setEntradas([...entradas, { ...entradaForm, id: Date.now() }]);
+                    setEntradaForm({ data: '', fonte: '', valor: '' });
+                }
+            };
+
+            const deleteEntrada = (id) => setEntradas(entradas.filter(e => e.id !== id));
+
+            const addSaida = () => {
+                if (saidaForm.data && saidaForm.categoria && saidaForm.valor) {
+                    const novasSaidas = [];
+                    if (saidaForm.parcelado && saidaForm.parcelas > 1) {
+                        const valorParcela = parseFloat(saidaForm.valor) / parseInt(saidaForm.parcelas);
+                        const dataInicial = new Date(saidaForm.data);
+                        for (let i = 0; i < saidaForm.parcelas; i++) {
+                            const novaData = new Date(dataInicial);
+                            novaData.setMonth(novaData.getMonth() + i);
+                            novasSaidas.push({
+                                ...saidaForm,
+                                valor: valorParcela.toFixed(2),
+                                data: novaData.toISOString().slice(0, 10),
+                                descricao: `${saidaForm.descricao} (${i + 1}/${saidaForm.parcelas})`,
+                                id: Date.now() + i
+                            });
+                        }
+                    } else {
+                        novasSaidas.push({ ...saidaForm, id: Date.now() });
+                    }
+                    setSaidas([...saidas, ...novasSaidas]);
+                    setSaidaForm({ data: '', categoria: '', valor: '', descricao: '', parcelado: false, parcelas: 1 });
+                }
+            };
+
+            const deleteSaida = (id) => setSaidas(saidas.filter(s => s.id !== id));
+
+            const addMeta = () => {
+                if (metaForm.nome && metaForm.valorAlvo && metaForm.prazo) {
+                    setMetas([...metas, { ...metaForm, id: Date.now() }]);
+                    setMetaForm({ nome: '', valorAlvo: '', prazo: '', valorAtual: '0' });
+                }
+            };
+
+            const updateMetaValor = (id, novoValor) => {
+                setMetas(metas.map(m => m.id === id ? { ...m, valorAtual: novoValor } : m));
+            };
+
+            const deleteMeta = (id) => setMetas(metas.filter(m => m.id !== id));
+
+            const addDivida = () => {
+                if (dividaForm.nome && dividaForm.valorTotal && dividaForm.dataVencimento) {
+                    setDividas([...dividas, { ...dividaForm, id: Date.now() }]);
+                    setDividaForm({ nome: '', valorTotal: '', valorPago: '0', dataVencimento: '' });
+                }
+            };
+
+            const updateDividaPagamento = (id, valorPago) => {
+                setDividas(dividas.map(d => d.id === id ? { ...d, valorPago } : d));
+            };
+
+            const deleteDivida = (id) => setDividas(dividas.filter(d => d.id !== id));
+
+            const addInvestimento = () => {
+                if (investimentoForm.nome && investimentoForm.valorInvestido) {
+                    setInvestimentos([...investimentos, { ...investimentoForm, id: Date.now() }]);
+                    setInvestimentoForm({ nome: '', tipo: '', valorInvestido: '', valorAtual: '', dataInicio: '' });
+                }
+            };
+
+            const deleteInvestimento = (id) => setInvestimentos(investimentos.filter(i => i.id !== id));
+
+            const addAssinatura = () => {
+                if (assinaturaForm.nome && assinaturaForm.valor && assinaturaForm.diaCobranca) {
+                    setAssinaturas([...assinaturas, { ...assinaturaForm, id: Date.now() }]);
+                    setAssinaturaForm({ nome: '', valor: '', diaCobranca: '', ativa: true });
+                }
+            };
+
+            const toggleAssinatura = (id) => {
+                setAssinaturas(assinaturas.map(a => a.id === id ? { ...a, ativa: !a.ativa } : a));
+            };
+
+            const deleteAssinatura = (id) => setAssinaturas(assinaturas.filter(a => a.id !== id));
+
+            const addCartao = () => {
+                if (cartaoForm.nome && cartaoForm.limite) {
+                    setCartoes([...cartoes, { ...cartaoForm, id: Date.now(), gastoAtual: 0 }]);
+                    setCartaoForm({ nome: '', limite: '', fechamento: '' });
+                }
+            };
+
+            const deleteCartao = (id) => setCartoes(cartoes.filter(c => c.id !== id));
+
+            const addOrcamento = () => {
+                if (orcamentoForm.categoria && orcamentoForm.limite) {
+                    setOrcamento({ ...orcamento, [orcamentoForm.categoria]: parseFloat(orcamentoForm.limite) });
+                    setOrcamentoForm({ categoria: '', limite: '' });
+                }
+            };
+
+            const deleteOrcamento = (categoria) => {
+                const novoOrcamento = { ...orcamento };
+                delete novoOrcamento[categoria];
+                setOrcamento(novoOrcamento);
+            };
+
+            const regra503020 = {
+                necessidades: entradasMes * 0.5,
+                desejos: entradasMes * 0.3,
+                poupanca: entradasMes * 0.2
+            };
+
+            return (
+                <div className="min-h-screen bg-black text-white">
+                    <header className="border-b border-gray-800 bg-gradient-to-r from-gray-900 via-black to-gray-900">
+                        <div className="max-w-7xl mx-auto px-6 py-6">
+                            <div className="flex justify-between items-center">
+                                <div>
+                                    <h1 className="text-3xl font-bold bg-gradient-to-r from-white via-gray-300 to-gray-500 bg-clip-text text-transparent">
+                                        Sistema Financeiro Elite
+                                    </h1>
+                                    <p className="text-gray-400 mt-1">Controle profissional de finanças pessoais</p>
+                                </div>
+                                <div className="flex items-center gap-6">
+                                    <div className="flex gap-2">
+                                        <button onClick={exportarDados} className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm">
+                                            <Icon name="download" size={16} />
+                                            Backup
+                                        </button>
+                                        <label className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm cursor-pointer">
+                                            <Icon name="upload" size={16} />
+                                            Importar
+                                            <input type="file" accept=".json" onChange={importarDados} className="hidden" />
+                                        </label>
+                                        <button onClick={limparTodosDados} className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm">
+                                            <Icon name="trash-2" size={16} />
+                                            Limpar
+                                        </button>
+                                    </div>
+                                    <div className="text-right">
+                                        <p className="text-sm text-gray-400">Score Financeiro</p>
+                                        <div className="flex items-center gap-2">
+                                            <div className="w-32 bg-gray-800 rounded-full h-2">
+                                                <div 
+                                                    className={`h-2 rounded-full ${scoreFinanceiro >= 70 ? 'bg-green-500' : scoreFinanceiro >= 40 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                                                    style={{ width: `${scoreFinanceiro}%` }}
+                                                />
+                                            </div>
+                                            <span className="text-xl font-bold">{scoreFinanceiro}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </header>
+
+                    <nav className="border-b border-gray-800 bg-gray-900 sticky top-0 z-10">
+                        <div className="max-w-7xl mx-auto px-6">
+                            <div className="flex space-x-1 overflow-x-auto">
+                                {[
+                                    { id: 'dashboard', label: 'Dashboard', icon: 'bar-chart-3' },
+                                    { id: 'entradas', label: 'Entradas', icon: 'trending-up' },
+                                    { id: 'saidas', label: 'Saídas', icon: 'trending-down' },
+                                    { id: 'dividas', label: 'Dívidas', icon: 'alert-triangle' },
+                                    { id: 'investimentos', label: 'Investimentos', icon: 'dollar-sign' },
+                                    { id: 'metas', label: 'Metas', icon: 'target' },
+                                    { id: 'assinaturas', label: 'Assinaturas', icon: 'receipt' },
+                                    { id: 'cartoes', label: 'Cartões', icon: 'credit-card' },
+                                    { id: 'orcamento', label: 'Orçamento', icon: 'pie-chart' }
+                                ].map(tab => (
+                                    <button
+                                        key={tab.id}
+                                        onClick={() => setActiveTab(tab.id)}
+                                        className={`flex items-center gap-2 px-4 py-4 font-medium transition-all whitespace-nowrap ${
+                                            activeTab === tab.id ? 'text-white border-b-2 border-white' : 'text-gray-400 hover:text-gray-200'
+                                        }`}
+                                    >
+                                        <Icon name={tab.icon} size={18} />
+                                        {tab.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </nav>
+
+                    <main className="max-w-7xl mx-auto px-6 py-8">
+                        {activeTab === 'dashboard' && (
+                            <div className="space-y-6">
+                                <div className="bg-blue-900/20 border border-blue-800/50 rounded-xl p-4 flex items-start gap-3">
+                                    <Icon name="save" className="text-blue-400 mt-1" size={20} />
+                                    <div>
+                                        <p className="text-blue-400 font-medium">💾 Salvamento Automático Ativado!</p>
+                                        <p className="text-sm text-gray-400 mt-1">Todos os seus dados são salvos automaticamente no seu navegador.</p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                    <div className="bg-gradient-to-br from-green-900/30 to-green-950/30 border border-green-800/50 rounded-xl p-5">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h3 className="text-green-400 font-medium text-sm">Patrimônio Líquido</h3>
+                                            <Icon name="wallet" className="text-green-400" size={20} />
+                                        </div>
+                                        <p className="text-2xl font-bold text-white">R$ {patrimonioLiquido.toFixed(2)}</p>
+                                        <p className="text-xs text-gray-400 mt-1">Saldo + Investimentos - Dívidas</p>
+                                    </div>
+
+                                    <div className="bg-gradient-to-br from-blue-900/30 to-blue-950/30 border border-blue-800/50 rounded-xl p-5">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h3 className="text-blue-400 font-medium text-sm">Saldo Atual</h3>
+                                            <Icon name="dollar-sign" className="text-blue-400" size={20} />
+                                        </div>
+                                        <p className="text-2xl font-bold text-white">R$ {saldoAtual.toFixed(2)}</p>
+                                        <p className="text-xs text-gray-400 mt-1">Entradas - Saídas</p>
+                                    </div>
+
+                                    <div className="bg-gradient-to-br from-purple-900/30 to-purple-950/30 border border-purple-800/50 rounded-xl p-5">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h3 className="text-purple-400 font-medium text-sm">Investimentos</h3>
+                                            <Icon name="trending-up" className="text-purple-400" size={20} />
+                                        </div>
+                                        <p className="text-2xl font-bold text-white">R$ {totalInvestimentos.toFixed(2)}</p>
+                                        <p className="text-xs text-gray-400 mt-1">{investimentos.length} ativos</p>
+                                    </div>
+
+                                    <div className="bg-gradient-to-br from-red-900/30 to-red-950/30 border border-red-800/50 rounded-xl p-5">
+                                        <div className="flex items-center justify-between mb-3">
+                                            <h3 className="text-red-400 font-medium text-sm">Dívidas Totais</h3>
+                                            <Icon name="alert-triangle" className="text-red-400" size={20} />
+                                        </div>
+                                        <p className="text-2xl font-bold text-white">R$ {totalDividas.toFixed(2)}</p>
+                                        <p className="text-xs text-gray-400 mt-1">{dividas.length} dívidas ativas</p>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                                        <div className="flex items-center gap-3 mb-3">
+                                            <Icon name="arrow-up-right" className="text-green-400" size={20} />
+                                            <h3 className="font-medium">Entradas do Mês</h3>
+                                        </div>
+                                        <p className="text-3xl font-bold text-green-400">R$ {entradasMes.toFixed(2)}</p>
+                                    </div>
+
+                                    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                                        <div className="flex items-center gap-3 mb-3">
+                                            <Icon name="arrow-down-right" className="text-red-400" size={20} />
+                                            <h3 className="font-medium">Saídas do Mês</h3>
+                                        </div>
+                                        <p className="text-3xl font-bold text-red-400">R$ {saidasMes.toFixed(2)}</p>
+                                    </div>
+
+                                    <div className="bg-gray-900 border border-gray-800 rounded-xl p-5">
+                                        <div className="flex items-center gap-3 mb-3">
+                                            <Icon name="receipt" className="text-orange-400" size={20} />
+                                            <h3 className="font-medium">Assinaturas</h3>
+                                        </div>
+                                        <p className="text-3xl font-bold text-orange-400">R$ {totalAssinaturas.toFixed(2)}</p>
+                                        <p className="text-sm text-gray-400 mt-1">{assinaturas.filter(a => a.ativa).length} ativas</p>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h3 className="text-xl font-bold mb-4 flex items-center gap-2">
+                                        <Icon name="pie-chart" size={24} />
+                                        Regra 50/30/20
+                                    </h3>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-gray-400">Necessidades (50%)</span>
+                                                <span className="text-white font-medium">R$ {regra503020.necessidades.toFixed(2)}</span>
+                                            </div>
+                                            <div className="w-full bg-gray-800 rounded-full h-2">
+                                                <div className="bg-blue-500 h-2 rounded-full" style={{ width: '50%' }} />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-gray-400">Desejos (30%)</span>
+                                                <span className="text-white font-medium">R$ {regra503020.desejos.toFixed(2)}</span>
+                                            </div>
+                                            <div className="w-full bg-gray-800 rounded-full h-2">
+                                                <div className="bg-purple-500 h-2 rounded-full" style={{ width: '30%' }} />
+                                            </div>
+                                        </div>
+                                        <div className="space-y-2">
+                                            <div className="flex justify-between text-sm">
+                                                <span className="text-gray-400">Poupança (20%)</span>
+                                                <span className="text-white font-medium">R$ {regra503020.poupanca.toFixed(2)}</span>
+                                            </div>
+                                            <div className="w-full bg-gray-800 rounded-full h-2">
+                                                <div className="bg-green-500 h-2 rounded-full" style={{ width: '20%' }} />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'entradas' && (
+                            <div className="space-y-6">
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                                        <Icon name="trending-up" size={28} />
+                                        Registrar Entrada
+                                    </h2>
+                                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                                        <input type="date" value={entradaForm.data} onChange={(e) => setEntradaForm({...entradaForm, data: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="text" placeholder="Fonte" value={entradaForm.fonte} onChange={(e) => setEntradaForm({...entradaForm, fonte: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="number" placeholder="Valor" value={entradaForm.valor} onChange={(e) => setEntradaForm({...entradaForm, valor: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <button onClick={addEntrada} className="bg-green-600 hover:bg-green-700 text-white rounded-lg px-6 py-2 font-medium flex items-center justify-center gap-2">
+                                            <Icon name="plus-circle" size={20} />
+                                            Adicionar
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h3 className="text-xl font-bold mb-4">Histórico de Entradas</h3>
+                                    <div className="space-y-2">
+                                        {entradas.length === 0 ? (
+                                            <p className="text-gray-400 text-center py-8">Nenhuma entrada registrada</p>
+                                        ) : (
+                                            entradas.map(entrada => (
+                                                <div key={entrada.id} className="flex items-center justify-between bg-gray-800 p-4 rounded-lg">
+                                                    <div>
+                                                        <p className="font-medium">{entrada.fonte}</p>
+                                                        <p className="text-sm text-gray-400">{entrada.data}</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-4">
+                                                        <p className="text-green-400 font-bold">R$ {parseFloat(entrada.valor).toFixed(2)}</p>
+                                                        <button onClick={() => deleteEntrada(entrada.id)} className="text-red-400 hover:text-red-300">
+                                                            <Icon name="trash-2" size={18} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'saidas' && (
+                            <div className="space-y-6">
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                                        <Icon name="trending-down" size={28} />
+                                        Registrar Saída
+                                    </h2>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <input type="date" value={saidaForm.data} onChange={(e) => setSaidaForm({...saidaForm, data: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="text" placeholder="Categoria" value={saidaForm.categoria} onChange={(e) => setSaidaForm({...saidaForm, categoria: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="number" placeholder="Valor" value={saidaForm.valor} onChange={(e) => setSaidaForm({...saidaForm, valor: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="text" placeholder="Descrição" value={saidaForm.descricao} onChange={(e) => setSaidaForm({...saidaForm, descricao: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <button onClick={addSaida} className="bg-red-600 hover:bg-red-700 text-white rounded-lg px-6 py-2 font-medium flex items-center justify-center gap-2">
+                                            <Icon name="plus-circle" size={20} />
+                                            Adicionar
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h3 className="text-xl font-bold mb-4">Histórico de Saídas</h3>
+                                    <div className="space-y-2">
+                                        {saidas.length === 0 ? (
+                                            <p className="text-gray-400 text-center py-8">Nenhuma saída registrada</p>
+                                        ) : (
+                                            saidas.map(saida => (
+                                                <div key={saida.id} className="flex items-center justify-between bg-gray-800 p-4 rounded-lg">
+                                                    <div>
+                                                        <p className="font-medium">{saida.categoria}</p>
+                                                        <p className="text-sm text-gray-400">{saida.descricao}</p>
+                                                        <p className="text-xs text-gray-500">{saida.data}</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-4">
+                                                        <p className="text-red-400 font-bold">R$ {parseFloat(saida.valor).toFixed(2)}</p>
+                                                        <button onClick={() => deleteSaida(saida.id)} className="text-red-400 hover:text-red-300">
+                                                            <Icon name="trash-2" size={18} />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'metas' && (
+                            <div className="space-y-6">
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                                        <Icon name="target" size={28} />
+                                        Criar Meta
+                                    </h2>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <input type="text" placeholder="Nome da meta" value={metaForm.nome} onChange={(e) => setMetaForm({...metaForm, nome: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="number" placeholder="Valor alvo" value={metaForm.valorAlvo} onChange={(e) => setMetaForm({...metaForm, valorAlvo: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="date" value={metaForm.prazo} onChange={(e) => setMetaForm({...metaForm, prazo: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <button onClick={addMeta} className="bg-blue-600 hover:bg-blue-700 text-white rounded-lg px-6 py-2 font-medium flex items-center justify-center gap-2">
+                                            <Icon name="plus-circle" size={20} />
+                                            Adicionar
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h3 className="text-xl font-bold mb-4">Minhas Metas</h3>
+                                    <div className="space-y-4">
+                                        {metas.length === 0 ? (
+                                            <p className="text-gray-400 text-center py-8">Nenhuma meta criada</p>
+                                        ) : (
+                                            metas.map(meta => {
+                                                const progresso = (parseFloat(meta.valorAtual) / parseFloat(meta.valorAlvo)) * 100;
+                                                return (
+                                                    <div key={meta.id} className="bg-gray-800 p-4 rounded-lg">
+                                                        <div className="flex justify-between items-start mb-3">
+                                                            <div>
+                                                                <p className="font-medium text-lg">{meta.nome}</p>
+                                                                <p className="text-sm text-gray-400">Prazo: {meta.prazo}</p>
+                                                            </div>
+                                                            <button onClick={() => deleteMeta(meta.id)} className="text-red-400 hover:text-red-300">
+                                                                <Icon name="trash-2" size={18} />
+                                                            </button>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <div className="flex justify-between text-sm">
+                                                                <span className="text-gray-400">Progresso</span>
+                                                                <span className="text-white">{progresso.toFixed(0)}%</span>
+                                                            </div>
+                                                            <div className="w-full bg-gray-700 rounded-full h-2">
+                                                                <div className="bg-blue-500 h-2 rounded-full transition-all" style={{ width: `${Math.min(progresso, 100)}%` }} />
+                                                            </div>
+                                                            <div className="flex justify-between items-center mt-3">
+                                                                <div>
+                                                                    <p className="text-xs text-gray-400">Atual / Meta</p>
+                                                                    <p className="text-white font-medium">R$ {parseFloat(meta.valorAtual).toFixed(2)} / R$ {parseFloat(meta.valorAlvo).toFixed(2)}</p>
+                                                                </div>
+                                                                <input type="number" placeholder="Atualizar" defaultValue={meta.valorAtual} className="bg-gray-700 border border-gray-600 rounded px-3 py-1 text-white w-32" onBlur={(e) => updateMetaValor(meta.id, e.target.value)} />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'dividas' && (
+                            <div className="space-y-6">
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h2 className="text-2xl font-bold mb-4 flex items-center gap-2">
+                                        <Icon name="alert-triangle" size={28} />
+                                        Registrar Dívida
+                                    </h2>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <input type="text" placeholder="Nome" value={dividaForm.nome} onChange={(e) => setDividaForm({...dividaForm, nome: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="number" placeholder="Valor total" value={dividaForm.valorTotal} onChange={(e) => setDividaForm({...dividaForm, valorTotal: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="date" value={dividaForm.dataVencimento} onChange={(e) => setDividaForm({...dividaForm, dataVencimento: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <button onClick={addDivida} className="bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg px-6 py-2 font-medium flex items-center justify-center gap-2">
+                                            <Icon name="plus-circle" size={20} />
+                                            Adicionar
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h3 className="text-xl font-bold mb-4">Dívidas Ativas</h3>
+                                    <div className="space-y-4">
+                                        {dividas.length === 0 ? (
+                                            <p className="text-gray-400 text-center py-8">Nenhuma dívida registrada</p>
+                                        ) : (
+                                            dividas.map(divida => {
+                                                const restante = parseFloat(divida.valorTotal) - parseFloat(divida.valorPago);
+                                                const progresso = (parseFloat(divida.valorPago) / parseFloat(divida.valorTotal)) * 100;
+                                                return (
+                                                    <div key={divida.id} className="bg-gray-800 p-4 rounded-lg">
+                                                        <div className="flex justify-between items-start mb-3">
+                                                            <div>
+                                                                <p className="font-medium text-lg">{divida.nome}</p>
+                                                                <p className="text-sm text-gray-400">Vencimento: {divida.dataVencimento}</p>
+                                                            </div>
+                                                            <button onClick={() => deleteDivida(divida.id)} className="text-red-400 hover:text-red-300">
+                                                                <Icon name="trash-2" size={18} />
+                                                            </button>
+                                                        </div>
+                                                        <div className="space-y-2">
+                                                            <div className="flex justify-between text-sm">
+                                                                <span className="text-gray-400">Progresso</span>
+                                                                <span className="text-white">{progresso.toFixed(0)}%</span>
+                                                            </div>
+                                                            <div className="w-full bg-gray-700 rounded-full h-2">
+                                                                <div className="bg-yellow-500 h-2 rounded-full" style={{ width: `${progresso}%` }} />
+                                                            </div>
+                                                            <div className="flex justify-between items-center mt-3">
+                                                                <div>
+                                                                    <p className="text-xs text-gray-400">Restante</p>
+                                                                    <p className="text-red-400 font-bold">R$ {restante.toFixed(2)}</p>
+                                                                </div>
+                                                                <input type="number" placeholder="Valor pago" defaultValue={divida.valorPago} className="bg-gray-700 border border-gray-600 rounded px-3 py-1 text-white w-32" onBlur={(e) => updateDividaPagamento(divida.id, e.target.value)} />
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'investimentos' && (
+                            <div className="space-y-6">
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h2 className="text-2xl font-bold mb-4">Registrar Investimento</h2>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <input type="text" placeholder="Nome" value={investimentoForm.nome} onChange={(e) => setInvestimentoForm({...investimentoForm, nome: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="text" placeholder="Tipo" value={investimentoForm.tipo} onChange={(e) => setInvestimentoForm({...investimentoForm, tipo: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="number" placeholder="Valor investido" value={investimentoForm.valorInvestido} onChange={(e) => setInvestimentoForm({...investimentoForm, valorInvestido: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="number" placeholder="Valor atual" value={investimentoForm.valorAtual} onChange={(e) => setInvestimentoForm({...investimentoForm, valorAtual: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <button onClick={addInvestimento} className="bg-purple-600 hover:bg-purple-700 text-white rounded-lg px-6 py-2 font-medium">Adicionar</button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h3 className="text-xl font-bold mb-4">Portfólio</h3>
+                                    <div className="space-y-4">
+                                        {investimentos.map(inv => {
+                                            const rent = ((parseFloat(inv.valorAtual) - parseFloat(inv.valorInvestido)) / parseFloat(inv.valorInvestido)) * 100;
+                                            return (
+                                                <div key={inv.id} className="bg-gray-800 p-4 rounded-lg flex justify-between">
+                                                    <div>
+                                                        <p className="font-medium">{inv.nome}</p>
+                                                        <p className="text-sm text-gray-400">{inv.tipo}</p>
+                                                    </div>
+                                                    <div className="text-right">
+                                                        <p className="text-white">R$ {parseFloat(inv.valorAtual).toFixed(2)}</p>
+                                                        <p className={rent >= 0 ? 'text-green-400' : 'text-red-400'}>{rent >= 0 ? '+' : ''}{rent.toFixed(2)}%</p>
+                                                    </div>
+                                                    <button onClick={() => deleteInvestimento(inv.id)} className="text-red-400"><Icon name="trash-2" size={18} /></button>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'assinaturas' && (
+                            <div className="space-y-6">
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h2 className="text-2xl font-bold mb-4">Adicionar Assinatura</h2>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <input type="text" placeholder="Nome" value={assinaturaForm.nome} onChange={(e) => setAssinaturaForm({...assinaturaForm, nome: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="number" placeholder="Valor" value={assinaturaForm.valor} onChange={(e) => setAssinaturaForm({...assinaturaForm, valor: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="number" placeholder="Dia cobrança" value={assinaturaForm.diaCobranca} onChange={(e) => setAssinaturaForm({...assinaturaForm, diaCobranca: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <button onClick={addAssinatura} className="bg-orange-600 hover:bg-orange-700 text-white rounded-lg px-6 py-2">Adicionar</button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h3 className="text-xl font-bold mb-4">Assinaturas</h3>
+                                    <div className="space-y-2">
+                                        {assinaturas.map(ass => (
+                                            <div key={ass.id} className="flex justify-between bg-gray-800 p-4 rounded-lg">
+                                                <div className="flex gap-3">
+                                                    <input type="checkbox" checked={ass.ativa} onChange={() => toggleAssinatura(ass.id)} />
+                                                    <div>
+                                                        <p>{ass.nome}</p>
+                                                        <p className="text-sm text-gray-400">Dia {ass.diaCobranca}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="flex items-center gap-3">
+                                                    <p className="text-orange-400">R$ {parseFloat(ass.valor).toFixed(2)}</p>
+                                                    <button onClick={() => deleteAssinatura(ass.id)} className="text-red-400"><Icon name="trash-2" size={18} /></button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'cartoes' && (
+                            <div className="space-y-6">
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h2 className="text-2xl font-bold mb-4">Adicionar Cartão</h2>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <input type="text" placeholder="Nome" value={cartaoForm.nome} onChange={(e) => setCartaoForm({...cartaoForm, nome: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="number" placeholder="Limite" value={cartaoForm.limite} onChange={(e) => setCartaoForm({...cartaoForm, limite: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="number" placeholder="Dia fechamento" value={cartaoForm.fechamento} onChange={(e) => setCartaoForm({...cartaoForm, fechamento: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <button onClick={addCartao} className="bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg px-6 py-2">Adicionar</button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h3 className="text-xl font-bold mb-4">Meus Cartões</h3>
+                                    <div className="grid md:grid-cols-2 gap-4">
+                                        {cartoes.map(c => (
+                                            <div key={c.id} className="bg-gradient-to-br from-indigo-900/50 to-purple-900/50 border border-indigo-800/50 p-5 rounded-xl">
+                                                <div className="flex justify-between mb-3">
+                                                    <p className="font-medium">{c.nome}</p>
+                                                    <button onClick={() => deleteCartao(c.id)} className="text-red-400"><Icon name="trash-2" size={18} /></button>
+                                                </div>
+                                                <p className="text-2xl font-bold">R$ {parseFloat(c.limite).toFixed(2)}</p>
+                                                <p className="text-sm text-gray-400 mt-1">Fecha dia {c.fechamento}</p>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {activeTab === 'orcamento' && (
+                            <div className="space-y-6">
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h2 className="text-2xl font-bold mb-4">Definir Orçamento</h2>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                                        <input type="text" placeholder="Categoria" value={orcamentoForm.categoria} onChange={(e) => setOrcamentoForm({...orcamentoForm, categoria: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <input type="number" placeholder="Limite" value={orcamentoForm.limite} onChange={(e) => setOrcamentoForm({...orcamentoForm, limite: e.target.value})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white" />
+                                        <button onClick={addOrcamento} className="bg-teal-600 hover:bg-teal-700 text-white rounded-lg px-6 py-2">Adicionar</button>
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h3 className="text-xl font-bold mb-4">Orçamentos</h3>
+                                    <div className="space-y-4">
+                                        {Object.entries(orcamento).map(([cat, lim]) => {
+                                            const gasto = gastosPorCategoria[cat] || 0;
+                                            const perc = (gasto / lim) * 100;
+                                            return (
+                                                <div key={cat} className="bg-gray-800 p-4 rounded-lg">
+                                                    <div className="flex justify-between mb-2">
+                                                        <p>{cat}</p>
+                                                        <button onClick={() => deleteOrcamento(cat)} className="text-red-400"><Icon name="trash-2" size={18} /></button>
+                                                    </div>
+                                                    <p className="text-sm text-gray-400">R$ {gasto.toFixed(2)} / R$ {lim.toFixed(2)}</p>
+                                                    <div className="w-full bg-gray-700 rounded-full h-2 mt-2">
+                                                        <div className={`h-2 rounded-full ${perc > 100 ? 'bg-red-500' : 'bg-green-500'}`} style={{ width: `${Math.min(perc, 100)}%` }} />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                <div className="bg-gray-900 border border-gray-800 rounded-xl p-6">
+                                    <h3 className="text-xl font-bold mb-4">Reserva de Emergência</h3>
+                                    <div className="grid grid-cols-2 gap-4 mb-4">
+                                        <div>
+                                            <label className="text-sm text-gray-400 block mb-2">Valor Atual</label>
+                                            <input type="number" value={reservaEmergencia.valorAtual} onChange={(e) => setReservaEmergencia({...reservaEmergencia, valorAtual: parseFloat(e.target.value) || 0})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white w-full" />
+                                        </div>
+                                        <div>
+                                            <label className="text-sm text-gray-400 block mb-2">Valor Meta</label>
+                                            <input type="number" value={reservaEmergencia.valorMeta} onChange={(e) => setReservaEmergencia({...reservaEmergencia, valorMeta: parseFloat(e.target.value) || 0})} className="bg-gray-800 border border-gray-700 rounded-lg px-4 py-2 text-white w-full" />
+                                        </div>
+                                    </div>
+                                    {reservaEmergencia.valorMeta > 0 && (
+                                        <div className="bg-gray-800 p-4 rounded-lg">
+                                            <div className="flex justify-between text-sm mb-2">
+                                                <span>Progresso</span>
+                                                <span>{((reservaEmergencia.valorAtual / reservaEmergencia.valorMeta) * 100).toFixed(0)}%</span>
+                                            </div>
+                                            <div className="w-full bg-gray-700 rounded-full h-3">
+                                                <div className="bg-blue-500 h-3 rounded-full" style={{ width: `${Math.min((reservaEmergencia.valorAtual / reservaEmergencia.valorMeta) * 100, 100)}%` }} />
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        )}
+                    </main>
+                </div>
+            );
+        };
+
+        const root = createRoot(document.getElementById('root'));
+        root.render(<FinanceManager />);
+    </script>
+</body>
 </html>
